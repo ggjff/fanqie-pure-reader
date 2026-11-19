@@ -52,7 +52,7 @@ jobs:
 
       # 先编 Rust 静态库 ios/Frameworks/libfqapi_core.a（真机 arm64），
       # 否则下一步链接阶段会报找不到 libfqapi_core.a。
-      - run: ./scripts/build_rust_ios.sh
+      - run: bash ./scripts/build_rust_ios.sh
 
       # --no-codesign：不签名，只产出 Runner.app；签名用 AltStore 在本地做。
       - run: flutter build ios --release --no-codesign

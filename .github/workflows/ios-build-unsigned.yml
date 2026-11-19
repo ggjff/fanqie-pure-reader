@@ -1,0 +1,72 @@
+# 番茄小说纯净版 iOS 未签名 IPA 构建（GitHub macOS runner，不用自备 Mac）
+#
+# 用法（在你自己的 fork 上）：
+#   1. Fork https://github.com/GodBook/fanqie-pure-reader ，把这个文件放进
+#      .github/workflows/ 并 push（或直接在 fork 里新建这个文件）。
+#   2. 打开 fork 的 Actions → "iOS unsigned IPA" → Run workflow。
+#   3. 跑完后在 Artifacts 里下载 fanqie-pure-unsigned-ipa，得到未签名的 .ipa。
+#   4. 在电脑上用 AltStore（或 Sideloadly）拿自己的 Apple ID 签名后装到 iPhone。
+#      免费 Apple ID 签的包 7 天过期，到期重签一次即可；想长期有效需付费开发者账号。
+#
+# 注意：
+#   - 这是未签名包：GitHub 的机器没有你的 Apple ID 和证书，签不了名，
+#     所以只能产出未签名 IPA，签名那步必须在你自己的电脑/手机上做。
+#   - 版本号跟仓库自带的一致：Flutter 3.47.1（见 README / .github/workflows/novel-checks.yml），
+#     Rust 工具链 stable，iOS 目标只编真机 arm64。
+#   - ios/Frameworks/libfqapi_core.a 不入库（见 ios/Frameworks/README.md），
+#     必须先跑仓库自带的 ./scripts/build_rust_ios.sh 从 rust/ 编出来，
+#     否则 flutter build ios 会在链接阶段报错找不到这个静态库。
+#   - FRB 的生成文件（lib/src/rust/frb_generated.dart 等）已入库，不需要额外跑 codegen。
+#   - 未在 macOS 上实跑验证过：这台机器是 Linux，没有 Xcode，编不了 iOS。
+#     第一次在 fork 上跑就是验证；最常见的失败点是 CocoaPods / Xcode 版本，
+#     看 Actions 日志里具体报错再修。
+#   - 包名是仓库默认的 com.fqapp.fqapp。AltStore 重签一般不用改；
+#     如果它报包名冲突，再改 ios/Runner.xcodeproj 里的 PRODUCT_BUNDLE_IDENTIFIER。
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust with iOS target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Install Flutter 3.47.1
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # 先编 Rust 静态库 ios/Frameworks/libfqapi_core.a（真机 arm64），
+      # 否则下一步链接阶段会报找不到 libfqapi_core.a。
+      - run: ./scripts/build_rust_ios.sh
+
+      # --no-codesign：不签名，只产出 Runner.app；签名用 AltStore 在本地做。
+      - run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r fanqie-pure-unsigned.ipa Payload
+          ls -lh fanqie-pure-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: fanqie-pure-unsigned-ipa
+          path: fanqie-pure-unsigned.ipa
+          if-no-files-found: error
